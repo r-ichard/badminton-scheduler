@@ -509,60 +509,110 @@ class MatchGenerator:
 
 class MockConstraintSolver:
     """FIXED Mock solver that properly respects time ordering and constraints"""
-
     def solve(self, tournament: TournamentConfig, pool_matches: List[Match], elimination_matches: List[Match]) -> ScheduleResult:
-        """FIXED Mock scheduling that respects pool/elimination phases and time ordering"""
+        """FIXED Mock scheduling that respects player rest constraints and court availability"""
         logger.warning("Using mock solver - install OR-Tools for real optimization")
 
-        # FIXED: Initialize court schedules properly
+        # Track court availability and player last match end times
         court_schedule = {i: 0 for i in range(1, tournament.num_courts + 1)}
+        player_last_end = defaultdict(int)  # player -> last match end time
 
-        # FIXED: Schedule pool matches with proper time advancement
+        # Schedule pool matches with player rest constraints
         for match in pool_matches:
-            # Find the court that becomes available earliest
-            earliest_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
-            earliest_time = court_schedule[earliest_court]
+            # Find earliest time this match can start considering:
+            # 1. Court availability
+            # 2. Player rest requirements for both players
+            earliest_court_time = min(court_schedule.values())
+            player1_available = player_last_end[match.player1] + tournament.rest_duration
+            player2_available = player_last_end[match.player2] + tournament.rest_duration
 
-            match.court = earliest_court
-            match.start_time = earliest_time
+            # Match can't start until both players are available AND a court is free
+            earliest_start = max(earliest_court_time, player1_available, player2_available)
+
+            # Find a court that's available at or before earliest_start
+            available_court = None
+            for court, available_time in court_schedule.items():
+                if available_time <= earliest_start:
+                    available_court = court
+                    break
+
+            # If no court is available at earliest_start, find the court that becomes free earliest
+            if available_court is None:
+                available_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
+                earliest_start = max(earliest_start, court_schedule[available_court])
+
+            # Assign match to court and time
+            match.court = available_court
+            match.start_time = earliest_start
             match.end_time = match.start_time + tournament.match_duration
 
-            # Update court availability
-            court_schedule[earliest_court] = match.end_time
+            # Update schedules
+            court_schedule[available_court] = match.end_time
+            player_last_end[match.player1] = match.end_time
+            player_last_end[match.player2] = match.end_time
 
         # Find when all pools are complete
         pool_completion_time = max(match.end_time for match in pool_matches) if pool_matches else 0
 
-        # FIXED: Ensure proper gap before elimination matches
+        # Ensure proper gap before elimination matches
         elimination_start_time = pool_completion_time + tournament.rest_duration
 
-        # FIXED: Reset all court schedules to elimination start time
+        # Reset court schedules to elimination start time (but keep player tracking)
         for court in court_schedule:
             court_schedule[court] = max(court_schedule[court], elimination_start_time)
 
-        # Schedule elimination matches AFTER all pools complete
+        # Schedule elimination matches with same player-aware logic
         for match in elimination_matches:
-            earliest_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
-            earliest_time = court_schedule[earliest_court]
+            # Find earliest time this elimination match can start considering:
+            # 1. Court availability
+            # 2. Player rest requirements for both players
+            # 3. Elimination phase start time
+            earliest_court_time = min(court_schedule.values())
+            player1_available = player_last_end[match.player1] + tournament.rest_duration
+            player2_available = player_last_end[match.player2] + tournament.rest_duration
 
-            match.court = earliest_court
-            match.start_time = max(elimination_start_time, earliest_time)
+            # Elimination match can't start until all constraints are met
+            earliest_start = max(earliest_court_time, player1_available, player2_available, elimination_start_time)
+
+            # Find a court that's available at or before earliest_start
+            available_court = None
+            for court, available_time in court_schedule.items():
+                if available_time <= earliest_start:
+                    available_court = court
+                    break
+
+            # If no court is available at earliest_start, find the court that becomes free earliest
+            if available_court is None:
+                available_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
+                earliest_start = max(earliest_start, court_schedule[available_court])
+
+            # Assign elimination match to court and time
+            match.court = available_court
+            match.start_time = earliest_start
             match.end_time = match.start_time + tournament.match_duration
 
-            # Update court availability
-            court_schedule[earliest_court] = match.end_time
+            # Update schedules
+            court_schedule[available_court] = match.end_time
+            player_last_end[match.player1] = match.end_time
+            player_last_end[match.player2] = match.end_time
 
+        # Combine all matches for result calculation
         all_matches = pool_matches + elimination_matches
+
+        # Calculate maximum wait time between matches for any player
         max_wait_time = self._calculate_max_wait_time(all_matches)
+
+        # Calculate tournament end time
         tournament_end = max(match.end_time for match in all_matches) if all_matches else 0
 
+        # Return complete schedule result
         return ScheduleResult(
             success=True,
             matches=all_matches,
             max_wait_time=max_wait_time,
             tournament_end_time=tournament_end,
-            court_utilization=0.8,  # Mock value
-            generation_time=0.1,
+            court_utilization=0.8,  # Mock value - in real implementation this would be calculated
+            generation_time=0.1,    # Mock value - in real implementation this would be measured
             pool_completion_time=pool_completion_time,
             warnings=["Using mock solver - results not optimized"]
         )
