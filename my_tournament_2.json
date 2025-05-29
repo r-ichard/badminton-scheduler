@@ -1,0 +1,48 @@
+{
+  "tournament": {
+    "name": "OR-Tools Badminton Tournament",
+    "start_time": "08:00",
+    "end_time": "22:00",
+    "match_duration": 33,
+    "rest_duration": 20,
+    "num_courts": 6
+  },
+  "series": [
+    {
+      "name": "SH1",
+      "series_type": "SH",
+      "total_players": 9,
+      "players_per_pool": 3,
+      "number_of_pools": 3,
+      "single_pool": false,
+      "qualifiers_per_pool": 2
+    },
+    {
+      "name": "SH2",
+      "series_type": "SH",
+      "total_players": 8,
+      "players_per_pool": 4,
+      "number_of_pools": 2,
+      "single_pool": false,
+      "qualifiers_per_pool": 2
+    },
+    {
+      "name": "SD1",
+      "series_type": "SD",
+      "total_players": 4,
+      "players_per_pool": null,
+      "number_of_pools": null,
+      "single_pool": true,
+      "qualifiers_per_pool": 0
+    },
+    {
+      "name": "MX1",
+      "series_type": "MX",
+      "total_players": 12,
+      "players_per_pool": 4,
+      "number_of_pools": 3,
+      "single_pool": false,
+      "qualifiers_per_pool": 2
+    }
+  ]
+}
