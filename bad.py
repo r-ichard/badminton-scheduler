@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Badminton Tournament Scheduler - FIXED CONSTRAINT VIOLATIONS
-Fixed issues with match scheduling and elimination bracket generation.
+Badminton Tournament Scheduler - FIXED ELIMINATION DEPENDENCIES
+Fixed issues with elimination bracket dependency scheduling.
 
 Key Fixes:
-1. Fixed MockConstraintSolver to properly respect time ordering
-2. Fixed elimination bracket generation for 6 qualifiers
-3. Enhanced constraint validation with better error reporting
+1. Fixed MockConstraintSolver to respect elimination round dependencies
+2. Added dependency-aware scheduling for sequential elimination rounds
+3. Enhanced constraint validation to detect dependency violations
+4. Added comprehensive unit tests for elimination dependencies
 """
 
 import argparse
@@ -120,7 +121,7 @@ class SeriesConfig:
 
 @dataclass
 class Match:
-    """Individual match representation"""
+    """Individual match representation with dependency tracking"""
     id: str
     series_name: str
     pool_name: str
@@ -132,6 +133,7 @@ class Match:
     end_time: Optional[int] = None
     phase: str = "pool"  # "pool" or "elimination"
     dependency: Optional[str] = None  # For elimination matches
+    dependency_level: int = 0  # 0=pools, 1=quarters, 2=semis, 3=final
 
     def __str__(self):
         time_str = f"{self.start_time//60:02d}:{self.start_time%60:02d}" if self.start_time else "TBD"
@@ -258,7 +260,7 @@ class TournamentCalculator:
         return PoolStructureHelper._calculate_elimination_matches(total_qualifiers)
 
 class MatchGenerator:
-    """Generate matches for tournament series with improved pool handling"""
+    """Generate matches for tournament series with improved dependency tracking"""
 
     def __init__(self, calculator: TournamentCalculator):
         self.calculator = calculator
@@ -302,7 +304,8 @@ class MatchGenerator:
                         round_type="pool",
                         player1=players[i],
                         player2=players[j],
-                        phase="pool"
+                        phase="pool",
+                        dependency_level=0
                     )
                     matches.append(match)
                     self.match_counter += 1
@@ -310,7 +313,7 @@ class MatchGenerator:
         return matches
 
     def _generate_elimination_matches(self, series: SeriesConfig, pool_sizes: List[int]) -> List[Match]:
-        """Generate elimination bracket matches with FIXED 6-qualifier handling"""
+        """Generate elimination bracket matches with FIXED dependency levels"""
         matches = []
         total_qualifiers = len(pool_sizes) * series.qualifiers_per_pool
 
@@ -328,7 +331,8 @@ class MatchGenerator:
                 player1="1st Pool A",
                 player2="1st Pool B",
                 phase="elimination",
-                dependency="all_pools_complete"
+                dependency="all_pools_complete",
+                dependency_level=1
             )
             matches.append(match)
             self.match_counter += 1
@@ -343,7 +347,8 @@ class MatchGenerator:
                 player1="1st Pool A",
                 player2="2nd Pool B",
                 phase="elimination",
-                dependency="all_pools_complete"
+                dependency="all_pools_complete",
+                dependency_level=1
             )
             matches.append(semi1)
             self.match_counter += 1
@@ -356,7 +361,8 @@ class MatchGenerator:
                 player1="1st Pool B",
                 player2="2nd Pool A",
                 phase="elimination",
-                dependency="all_pools_complete"
+                dependency="all_pools_complete",
+                dependency_level=1
             )
             matches.append(semi2)
             self.match_counter += 1
@@ -369,14 +375,14 @@ class MatchGenerator:
                 player1="Winner Semi 1",
                 player2="Winner Semi 2",
                 phase="elimination",
-                dependency="semi_complete"
+                dependency="semi_complete",
+                dependency_level=2
             )
             matches.append(final)
             self.match_counter += 1
 
         elif total_qualifiers == 6:
             # FIXED: Handle 6 qualifiers properly (2 quarters + 2 semis + 1 final with 2 byes)
-            # The top 2 qualifiers get byes to semi-finals
             quarter1 = Match(
                 id=f"{series.name}_Quarter1_{self.match_counter}",
                 series_name=series.name,
@@ -385,7 +391,8 @@ class MatchGenerator:
                 player1="2nd Pool A",
                 player2="2nd Pool C",
                 phase="elimination",
-                dependency="all_pools_complete"
+                dependency="all_pools_complete",
+                dependency_level=1
             )
             matches.append(quarter1)
             self.match_counter += 1
@@ -398,7 +405,8 @@ class MatchGenerator:
                 player1="2nd Pool B",
                 player2="1st Pool C",
                 phase="elimination",
-                dependency="all_pools_complete"
+                dependency="all_pools_complete",
+                dependency_level=1
             )
             matches.append(quarter2)
             self.match_counter += 1
@@ -412,7 +420,8 @@ class MatchGenerator:
                 player1="1st Pool A",  # Bye
                 player2="Winner QF1",
                 phase="elimination",
-                dependency="quarter_complete"
+                dependency="quarter_complete",
+                dependency_level=2
             )
             matches.append(semi1)
             self.match_counter += 1
@@ -425,7 +434,8 @@ class MatchGenerator:
                 player1="1st Pool B",  # Bye
                 player2="Winner QF2",
                 phase="elimination",
-                dependency="quarter_complete"
+                dependency="quarter_complete",
+                dependency_level=2
             )
             matches.append(semi2)
             self.match_counter += 1
@@ -439,7 +449,8 @@ class MatchGenerator:
                 player1="Winner Semi 1",
                 player2="Winner Semi 2",
                 phase="elimination",
-                dependency="semi_complete"
+                dependency="semi_complete",
+                dependency_level=3
             )
             matches.append(final)
             self.match_counter += 1
@@ -455,7 +466,8 @@ class MatchGenerator:
                     player1=f"Qualifier {2*i+1}",
                     player2=f"Qualifier {2*i+2}",
                     phase="elimination",
-                    dependency="all_pools_complete"
+                    dependency="all_pools_complete",
+                    dependency_level=1
                 )
                 matches.append(quarter)
                 self.match_counter += 1
@@ -469,7 +481,8 @@ class MatchGenerator:
                 player1="Winner QF1",
                 player2="Winner QF2",
                 phase="elimination",
-                dependency="quarter_complete"
+                dependency="quarter_complete",
+                dependency_level=2
             )
             matches.append(semi1)
             self.match_counter += 1
@@ -482,7 +495,8 @@ class MatchGenerator:
                 player1="Winner QF3",
                 player2="Winner QF4",
                 phase="elimination",
-                dependency="quarter_complete"
+                dependency="quarter_complete",
+                dependency_level=2
             )
             matches.append(semi2)
             self.match_counter += 1
@@ -496,7 +510,8 @@ class MatchGenerator:
                 player1="Winner Semi 1",
                 player2="Winner Semi 2",
                 phase="elimination",
-                dependency="semi_complete"
+                dependency="semi_complete",
+                dependency_level=3
             )
             matches.append(final)
             self.match_counter += 1
@@ -504,13 +519,14 @@ class MatchGenerator:
         return matches
 
 # =============================================
-# FIXED CONSTRAINT SOLVER
+# FIXED DEPENDENCY-AWARE CONSTRAINT SOLVER
 # =============================================
 
 class MockConstraintSolver:
-    """FIXED Mock solver that properly respects time ordering and constraints"""
+    """FIXED Mock solver that properly respects elimination dependencies"""
+
     def solve(self, tournament: TournamentConfig, pool_matches: List[Match], elimination_matches: List[Match]) -> ScheduleResult:
-        """FIXED Mock scheduling that respects player rest constraints and court availability"""
+        """FIXED Mock scheduling that respects dependencies and sequential elimination rounds"""
         logger.warning("Using mock solver - install OR-Tools for real optimization")
 
         # Track court availability and player last match end times
@@ -519,37 +535,7 @@ class MockConstraintSolver:
 
         # Schedule pool matches with player rest constraints
         for match in pool_matches:
-            # Find earliest time this match can start considering:
-            # 1. Court availability
-            # 2. Player rest requirements for both players
-            earliest_court_time = min(court_schedule.values())
-            player1_available = player_last_end[match.player1] + tournament.rest_duration
-            player2_available = player_last_end[match.player2] + tournament.rest_duration
-
-            # Match can't start until both players are available AND a court is free
-            earliest_start = max(earliest_court_time, player1_available, player2_available)
-
-            # Find a court that's available at or before earliest_start
-            available_court = None
-            for court, available_time in court_schedule.items():
-                if available_time <= earliest_start:
-                    available_court = court
-                    break
-
-            # If no court is available at earliest_start, find the court that becomes free earliest
-            if available_court is None:
-                available_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
-                earliest_start = max(earliest_start, court_schedule[available_court])
-
-            # Assign match to court and time
-            match.court = available_court
-            match.start_time = earliest_start
-            match.end_time = match.start_time + tournament.match_duration
-
-            # Update schedules
-            court_schedule[available_court] = match.end_time
-            player_last_end[match.player1] = match.end_time
-            player_last_end[match.player2] = match.end_time
+            self._schedule_match(match, tournament, court_schedule, player_last_end)
 
         # Find when all pools are complete
         pool_completion_time = max(match.end_time for match in pool_matches) if pool_matches else 0
@@ -561,40 +547,27 @@ class MockConstraintSolver:
         for court in court_schedule:
             court_schedule[court] = max(court_schedule[court], elimination_start_time)
 
-        # Schedule elimination matches with same player-aware logic
+        # Schedule elimination matches by dependency level (FIXED: Sequential rounds)
+        elimination_by_level = defaultdict(list)
         for match in elimination_matches:
-            # Find earliest time this elimination match can start considering:
-            # 1. Court availability
-            # 2. Player rest requirements for both players
-            # 3. Elimination phase start time
-            earliest_court_time = min(court_schedule.values())
-            player1_available = player_last_end[match.player1] + tournament.rest_duration
-            player2_available = player_last_end[match.player2] + tournament.rest_duration
+            elimination_by_level[match.dependency_level].append(match)
 
-            # Elimination match can't start until all constraints are met
-            earliest_start = max(earliest_court_time, player1_available, player2_available, elimination_start_time)
+        # Schedule each elimination level sequentially
+        for level in sorted(elimination_by_level.keys()):
+            level_matches = elimination_by_level[level]
 
-            # Find a court that's available at or before earliest_start
-            available_court = None
-            for court, available_time in court_schedule.items():
-                if available_time <= earliest_start:
-                    available_court = court
-                    break
+            # Schedule all matches in this level
+            for match in level_matches:
+                self._schedule_match(match, tournament, court_schedule, player_last_end, elimination_start_time)
 
-            # If no court is available at earliest_start, find the court that becomes free earliest
-            if available_court is None:
-                available_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
-                earliest_start = max(earliest_start, court_schedule[available_court])
+            # Wait for all matches in this level to complete before starting next level
+            if level_matches:
+                level_completion_time = max(match.end_time for match in level_matches)
+                next_level_start = level_completion_time + tournament.rest_duration
 
-            # Assign elimination match to court and time
-            match.court = available_court
-            match.start_time = earliest_start
-            match.end_time = match.start_time + tournament.match_duration
-
-            # Update schedules
-            court_schedule[available_court] = match.end_time
-            player_last_end[match.player1] = match.end_time
-            player_last_end[match.player2] = match.end_time
+                # Update all court schedules to next level start time
+                for court in court_schedule:
+                    court_schedule[court] = max(court_schedule[court], next_level_start)
 
         # Combine all matches for result calculation
         all_matches = pool_matches + elimination_matches
@@ -617,6 +590,42 @@ class MockConstraintSolver:
             warnings=["Using mock solver - results not optimized"]
         )
 
+    def _schedule_match(self, match: Match, tournament: TournamentConfig, court_schedule: Dict[int, int],
+                        player_last_end: Dict[str, int], min_start_time: int = 0):
+        """Schedule a single match considering all constraints"""
+        # Find earliest time this match can start considering:
+        # 1. Court availability
+        # 2. Player rest requirements for both players
+        # 3. Minimum start time (for elimination phases)
+        earliest_court_time = min(court_schedule.values())
+        player1_available = player_last_end[match.player1] + tournament.rest_duration
+        player2_available = player_last_end[match.player2] + tournament.rest_duration
+
+        # Match can't start until all constraints are met
+        earliest_start = max(earliest_court_time, player1_available, player2_available, min_start_time)
+
+        # Find a court that's available at or before earliest_start
+        available_court = None
+        for court, available_time in court_schedule.items():
+            if available_time <= earliest_start:
+                available_court = court
+                break
+
+        # If no court is available at earliest_start, find the court that becomes free earliest
+        if available_court is None:
+            available_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
+            earliest_start = max(earliest_start, court_schedule[available_court])
+
+        # Assign match to court and time
+        match.court = available_court
+        match.start_time = earliest_start
+        match.end_time = match.start_time + tournament.match_duration
+
+        # Update schedules
+        court_schedule[available_court] = match.end_time
+        player_last_end[match.player1] = match.end_time
+        player_last_end[match.player2] = match.end_time
+
     def _calculate_max_wait_time(self, matches: List[Match]) -> int:
         """Calculate maximum wait time between matches for any player"""
         player_times = defaultdict(list)
@@ -636,246 +645,11 @@ class MockConstraintSolver:
         return max_wait
 
 # =============================================
-# IMPROVED MAIN SCHEDULER CLASS
-# =============================================
-
-class BadmintonTournamentScheduler:
-    """Main scheduler class with improved pool configuration"""
-
-    def __init__(self, use_ortools: bool = True):
-        self.calculator = TournamentCalculator()
-        self.match_generator = MatchGenerator(self.calculator)
-
-        if use_ortools and HAS_ORTOOLS:
-            # Use the same OR-Tools solver from previous version
-            from ortools.sat.python import cp_model
-            self.solver = MockConstraintSolver()  # Simplified for this example
-        else:
-            self.solver = MockConstraintSolver()
-
-    def schedule_tournament(self, tournament_config: TournamentConfig, series_configs: List[SeriesConfig]) -> ScheduleResult:
-        """Generate complete tournament schedule with improved pool validation"""
-        logger.info(f"Starting schedule generation for tournament: {tournament_config.name}")
-
-        try:
-            # Validate and provide suggestions for each series
-            self._validate_and_suggest_series(series_configs)
-
-            # Validate overall tournament feasibility
-            self._validate_tournament_feasibility(tournament_config, series_configs)
-
-            # Generate all matches, separating pools and eliminations
-            all_pool_matches = []
-            all_elimination_matches = []
-
-            for series in series_configs:
-                pool_matches, elimination_matches = self.match_generator.generate_series_matches(series)
-                all_pool_matches.extend(pool_matches)
-                all_elimination_matches.extend(elimination_matches)
-                logger.info(f"📊 Series {series.name} ({series.get_pool_description()}): {len(pool_matches)} pool + {len(elimination_matches)} elimination = {len(pool_matches) + len(elimination_matches)} total matches")
-
-            logger.info(f"🎯 Tournament Total: {len(all_pool_matches)} pool matches, {len(all_elimination_matches)} elimination matches")
-
-            # Solve scheduling problem with phase separation
-            result = self.solver.solve(tournament_config, all_pool_matches, all_elimination_matches)
-
-            if result.success:
-                logger.info(f"✅ Schedule generated successfully in {result.generation_time:.2f} seconds")
-                logger.info(f"📊 Pool phase ends at: {self._minutes_to_time(result.pool_completion_time, tournament_config.start_time)}")
-                logger.info(f"📊 Max wait time: {result.max_wait_time} minutes")
-                logger.info(f"📊 Tournament ends at: {self._minutes_to_time(result.tournament_end_time, tournament_config.start_time)}")
-                logger.info(f"📊 Court utilization: {result.court_utilization:.1%}")
-            else:
-                logger.error(f"❌ Failed to generate schedule: {result.error_message}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"💥 Error during scheduling: {str(e)}")
-            return ScheduleResult(
-                success=False,
-                matches=[],
-                max_wait_time=0,
-                tournament_end_time=0,
-                court_utilization=0.0,
-                generation_time=0.0,
-                pool_completion_time=0,
-                error_message=str(e)
-            )
-
-    def _validate_and_suggest_series(self, series_list: List[SeriesConfig]):
-        """Validate each series and provide helpful suggestions"""
-        for series in series_list:
-            valid, warnings, suggestions = PoolStructureHelper.validate_and_suggest(series)
-
-            if not valid:
-                logger.warning(f"⚠️  Series {series.name} configuration issue:")
-                for warning in warnings:
-                    logger.warning(f"   • {warning}")
-
-                if suggestions:
-                    logger.info(f"💡 Suggested alternatives for {series.total_players} players:")
-                    for i, suggestion in enumerate(suggestions[:3]):  # Show top 3 suggestions
-                        logger.info(f"   {i+1}. {suggestion['description']} → {suggestion['total_matches']} total matches")
-
-                raise ValueError(f"Invalid pool configuration for series {series.name}")
-            else:
-                logger.info(f"✅ Series {series.name}: {series.get_pool_description()}")
-
-    def _validate_tournament_feasibility(self, tournament: TournamentConfig, series_list: List[SeriesConfig]):
-        """Validate that tournament is theoretically feasible"""
-        total_matches = 0
-
-        for series in series_list:
-            pool_sizes = series.get_pool_distribution()
-
-            # Pool matches
-            pool_matches = sum(self.calculator.calculate_pool_matches(size) for size in pool_sizes)
-
-            # Elimination matches
-            elimination_matches = 0
-            if not series.single_pool:
-                total_qualifiers = len(pool_sizes) * series.qualifiers_per_pool
-                elimination_matches = self.calculator.calculate_elimination_matches(total_qualifiers)
-
-            series_total = pool_matches + elimination_matches
-            total_matches += series_total
-
-        # Check time feasibility
-        start_time = self._time_to_minutes(tournament.start_time)
-        end_time = self._time_to_minutes(tournament.end_time)
-        available_minutes = end_time - start_time
-
-        # Rough estimate: assume perfect court utilization
-        required_minutes = total_matches * tournament.match_duration / tournament.num_courts
-
-        if required_minutes > available_minutes:
-            raise ValueError(
-                f"🚫 Tournament not feasible: {total_matches} matches require ~{required_minutes:.0f} minutes "
-                f"but only {available_minutes} minutes available"
-            )
-
-        logger.info(f"✅ Feasibility check passed: {total_matches} matches, ~{required_minutes:.0f}/{available_minutes} minutes needed")
-
-    def _time_to_minutes(self, time_str: str) -> int:
-        """Convert HH:MM to minutes from midnight"""
-        hours, minutes = map(int, time_str.split(':'))
-        return hours * 60 + minutes
-
-    def _minutes_to_time(self, minutes: int, start_time: str) -> str:
-        """Convert minutes from tournament start to HH:MM"""
-        start_minutes = self._time_to_minutes(start_time)
-        total_minutes = start_minutes + minutes
-        hours = total_minutes // 60
-        mins = total_minutes % 60
-        return f"{hours:02d}:{mins:02d}"
-
-    def print_schedule_summary(self, result: ScheduleResult, tournament_config: TournamentConfig):
-        """Print a formatted summary with phase separation"""
-        if not result.success:
-            print(f"❌ Schedule generation failed: {result.error_message}")
-            return
-
-        print(f"\n🏸 Tournament Schedule: {tournament_config.name}")
-        print("=" * 80)
-        print(f"📊 Summary:")
-        print(f"   • Total matches: {len(result.matches)}")
-        print(f"   • Pool phase ends: {self._minutes_to_time(result.pool_completion_time, tournament_config.start_time)}")
-        print(f"   • Max wait time: {result.max_wait_time} minutes")
-        print(f"   • Tournament ends: {self._minutes_to_time(result.tournament_end_time, tournament_config.start_time)}")
-        print(f"   • Court utilization: {result.court_utilization:.1%}")
-        print(f"   • Generation time: {result.generation_time:.2f} seconds")
-
-        if result.warnings:
-            print(f"\n⚠️  Warnings:")
-            for warning in result.warnings:
-                print(f"   • {warning}")
-
-        # Group matches by phase and time
-        pool_matches = [m for m in result.matches if m.phase == "pool"]
-        elimination_matches = [m for m in result.matches if m.phase == "elimination"]
-
-        print(f"\n📅 POOL PHASE ({len(pool_matches)} matches):")
-        print("-" * 60)
-        self._print_phase_matches(pool_matches, tournament_config, max_show=10)
-
-        if elimination_matches:
-            print(f"\n🏆 ELIMINATION PHASE ({len(elimination_matches)} matches):")
-            print("-" * 60)
-            self._print_phase_matches(elimination_matches, tournament_config, max_show=20)
-
-    def _print_phase_matches(self, matches: List[Match], tournament_config: TournamentConfig, max_show: int = 10):
-        """Print matches for a specific phase"""
-        time_slots = defaultdict(list)
-        for match in matches:
-            if match.start_time is not None:
-                time_str = self._minutes_to_time(match.start_time, tournament_config.start_time)
-                time_slots[time_str].append(match)
-
-        for i, (time, matches_at_time) in enumerate(sorted(time_slots.items())):
-            if i >= max_show:
-                print(f"   ... ({len(time_slots) - max_show} more time slots)")
-                break
-
-            print(f"{time}:")
-            for match in sorted(matches_at_time, key=lambda m: m.court or 0):
-                court_str = f"Court {match.court}" if match.court else "TBD"
-                print(f"   {court_str:8} | {match.series_name:4} | {match.pool_name:15} | {match.player1} vs {match.player2}")
-
-# =============================================
-# IMPROVED EXAMPLE CONFIGURATIONS
-# =============================================
-
-def create_improved_example_tournament() -> Tuple[TournamentConfig, List[SeriesConfig]]:
-    """Create tournament configuration with improved pool structure"""
-    tournament = TournamentConfig(
-        name="Improved Badminton Tournament",
-        start_time="08:00",
-        end_time="22:00",
-        match_duration=33,
-        rest_duration=20,
-        num_courts=6
-    )
-
-    # MUCH clearer series configuration
-    series = [
-        SeriesConfig(
-            name="SH1",
-            series_type="SH",
-            total_players=9,
-            players_per_pool=3,  # Creates 3 pools of 3 players each
-            qualifiers_per_pool=2
-        ),
-        SeriesConfig(
-            name="SH2",
-            series_type="SH",
-            total_players=8,
-            number_of_pools=2,  # Creates 2 pools of 4 players each
-            qualifiers_per_pool=2
-        ),
-        SeriesConfig(
-            name="SD1",
-            series_type="SD",
-            total_players=4,
-            single_pool=True  # Everyone plays everyone
-        ),
-        SeriesConfig(
-            name="MX1",
-            series_type="MX",
-            total_players=12,
-            players_per_pool=4,  # Creates 3 pools of 4 players each
-            qualifiers_per_pool=2
-        )
-    ]
-
-    return tournament, series
-
-# =============================================
-# CONSTRAINT VALIDATION HELPERS
+# ENHANCED CONSTRAINT VALIDATION
 # =============================================
 
 class ConstraintValidator:
-    """Helper class to validate tournament constraints"""
+    """Helper class to validate tournament constraints including dependencies"""
 
     @staticmethod
     def validate_rest_constraints(matches: List[Match], min_rest_minutes: int) -> Tuple[bool, List[str]]:
@@ -957,6 +731,35 @@ class ConstraintValidator:
         return len(violations) == 0, violations
 
     @staticmethod
+    def validate_elimination_dependencies(matches: List[Match]) -> Tuple[bool, List[str]]:
+        """NEW: Validate that elimination dependencies are respected"""
+        violations = []
+
+        elimination_matches = [m for m in matches if m.phase == "elimination" and m.start_time is not None]
+
+        # Group by dependency level
+        by_level = defaultdict(list)
+        for match in elimination_matches:
+            by_level[match.dependency_level].append(match)
+
+        # Check that each level completes before the next starts
+        for level in sorted(by_level.keys())[:-1]:  # All except the last level
+            current_level = by_level[level]
+            next_level = by_level.get(level + 1, [])
+
+            if current_level and next_level:
+                latest_current_end = max(match.end_time for match in current_level)
+                earliest_next_start = min(match.start_time for match in next_level)
+
+                if latest_current_end > earliest_next_start:
+                    violations.append(
+                        f"Elimination dependency violation: level {level} ends at {latest_current_end} "
+                        f"but level {level + 1} starts at {earliest_next_start}"
+                    )
+
+        return len(violations) == 0, violations
+
+    @staticmethod
     def validate_tournament_structure(result: ScheduleResult, series_configs: List[SeriesConfig]) -> Tuple[bool, List[str]]:
         """Validate overall tournament structure"""
         violations = []
@@ -1000,9 +803,111 @@ class ConstraintValidator:
         return len(violations) == 0, violations
 
 # =============================================
-# COMPREHENSIVE UNIT TESTS
+# ENHANCED UNIT TESTS FOR DEPENDENCIES
 # =============================================
 
+class TestEliminationDependencies(unittest.TestCase):
+    """NEW: Test elimination dependency scheduling"""
+
+    def setUp(self):
+        self.scheduler = BadmintonTournamentScheduler(use_ortools=False)
+        self.tournament = TournamentConfig(
+            name="Dependency Test Tournament",
+            start_time="08:00",
+            end_time="18:00",
+            match_duration=30,
+            rest_duration=20,
+            num_courts=6
+        )
+
+    def test_elimination_dependency_ordering(self):
+        """Test that elimination rounds are scheduled sequentially"""
+        series = [SeriesConfig(
+            name="SH1",
+            series_type="SH",
+            total_players=9,
+            players_per_pool=3,  # 3 pools of 3, 6 qualifiers
+            qualifiers_per_pool=2
+        )]
+
+        result = self.scheduler.schedule_tournament(self.tournament, series)
+
+        self.assertTrue(result.success)
+
+        elimination_matches = [m for m in result.matches if m.phase == "elimination"]
+
+        # Group by dependency level
+        by_level = defaultdict(list)
+        for match in elimination_matches:
+            by_level[match.dependency_level].append(match)
+
+        # Check that quarters (level 1) finish before semis (level 2) start
+        quarters = by_level.get(1, [])
+        semis = by_level.get(2, [])
+        finals = by_level.get(3, [])
+
+        if quarters and semis:
+            latest_quarter_end = max(match.end_time for match in quarters)
+            earliest_semi_start = min(match.start_time for match in semis)
+
+            self.assertLessEqual(latest_quarter_end, earliest_semi_start,
+                                 f"Quarters must finish before semis start: {latest_quarter_end} <= {earliest_semi_start}")
+
+        if semis and finals:
+            latest_semi_end = max(match.end_time for match in semis)
+            earliest_final_start = min(match.start_time for match in finals)
+
+            self.assertLessEqual(latest_semi_end, earliest_final_start,
+                                 f"Semis must finish before final starts: {latest_semi_end} <= {earliest_final_start}")
+
+    def test_elimination_dependency_validation(self):
+        """Test the elimination dependency validator"""
+        # Create matches with dependency violations
+        matches = [
+            Match("q1", "TEST", "Quarter 1", "quarter", "A1", "B2", 1, 100, 130, "elimination", dependency_level=1),
+            Match("q2", "TEST", "Quarter 2", "quarter", "A2", "B1", 2, 100, 130, "elimination", dependency_level=1),
+            Match("s1", "TEST", "Semi 1", "semi", "Winner Q1", "Winner Q2", 3, 120, 150, "elimination", dependency_level=2),  # Starts before quarters end
+        ]
+
+        valid, violations = ConstraintValidator.validate_elimination_dependencies(matches)
+        self.assertFalse(valid)
+        self.assertGreater(len(violations), 0)
+        self.assertIn("dependency violation", violations[0])
+
+        # Fix the dependency violation
+        matches[2].start_time = 160  # Start after quarters end + gap
+        matches[2].end_time = 190
+
+        valid, violations = ConstraintValidator.validate_elimination_dependencies(matches)
+        self.assertTrue(valid)
+        self.assertEqual(len(violations), 0)
+
+    def test_no_simultaneous_dependent_matches(self):
+        """Test that dependent matches are never scheduled simultaneously"""
+        series = [SeriesConfig(
+            name="MX1",
+            series_type="MX",
+            total_players=12,
+            players_per_pool=4,  # 3 pools of 4, 6 qualifiers
+            qualifiers_per_pool=2
+        )]
+
+        result = self.scheduler.schedule_tournament(self.tournament, series)
+
+        self.assertTrue(result.success)
+
+        elimination_matches = [m for m in result.matches if m.phase == "elimination"]
+
+        # Check that no two matches with different dependency levels have the same start time
+        time_to_levels = defaultdict(set)
+        for match in elimination_matches:
+            time_to_levels[match.start_time].add(match.dependency_level)
+
+        for start_time, levels in time_to_levels.items():
+            self.assertEqual(len(levels), 1,
+                             f"Multiple dependency levels scheduled at time {start_time}: {levels}")
+
+# Include all previous test classes...
 class TestBasicLogic(unittest.TestCase):
     """Test basic pool structure logic"""
 
@@ -1361,7 +1266,7 @@ class TestTournamentStructure(unittest.TestCase):
 
         self.assertTrue(result.success)
 
-        # Validate all constraints
+        # Validate all constraints INCLUDING dependencies
         rest_valid, rest_violations = ConstraintValidator.validate_rest_constraints(
             result.matches, self.tournament.rest_duration
         )
@@ -1369,6 +1274,8 @@ class TestTournamentStructure(unittest.TestCase):
         court_valid, court_violations = ConstraintValidator.validate_court_conflicts(result.matches)
 
         phase_valid, phase_violations = ConstraintValidator.validate_phase_ordering(result.matches)
+
+        dependency_valid, dependency_violations = ConstraintValidator.validate_elimination_dependencies(result.matches)
 
         structure_valid, structure_violations = ConstraintValidator.validate_tournament_structure(
             result, series
@@ -1381,6 +1288,8 @@ class TestTournamentStructure(unittest.TestCase):
             print(f"\n🚫 Court violations: {court_violations[:5]}")
         if not phase_valid:
             print(f"\n🚫 Phase violations: {phase_violations[:5]}")
+        if not dependency_valid:
+            print(f"\n🚫 Dependency violations: {dependency_violations[:5]}")
         if not structure_valid:
             print(f"\n🚫 Structure violations: {structure_violations[:5]}")
 
@@ -1388,11 +1297,238 @@ class TestTournamentStructure(unittest.TestCase):
         self.assertTrue(rest_valid, f"Rest constraints violated: {len(rest_violations)} violations")
         self.assertTrue(court_valid, f"Court constraints violated: {len(court_violations)} violations")
         self.assertTrue(phase_valid, f"Phase constraints violated: {len(phase_violations)} violations")
+        self.assertTrue(dependency_valid, f"Dependency constraints violated: {len(dependency_violations)} violations")
         self.assertTrue(structure_valid, f"Structure constraints violated: {len(structure_violations)} violations")
 
-# =============================================
-# POOL STRUCTURE HELPER COMMAND
-# =============================================
+# Include remaining classes from original code...
+# [BadmintonTournamentScheduler, show_pool_suggestions, main, etc.]
+
+class BadmintonTournamentScheduler:
+    """Main scheduler class with improved pool configuration"""
+
+    def __init__(self, use_ortools: bool = True):
+        self.calculator = TournamentCalculator()
+        self.match_generator = MatchGenerator(self.calculator)
+
+        if use_ortools and HAS_ORTOOLS:
+            # Use the same OR-Tools solver from previous version
+            from ortools.sat.python import cp_model
+            self.solver = MockConstraintSolver()  # Simplified for this example
+        else:
+            self.solver = MockConstraintSolver()
+
+    def schedule_tournament(self, tournament_config: TournamentConfig, series_configs: List[SeriesConfig]) -> ScheduleResult:
+        """Generate complete tournament schedule with improved pool validation"""
+        logger.info(f"Starting schedule generation for tournament: {tournament_config.name}")
+
+        try:
+            # Validate and provide suggestions for each series
+            self._validate_and_suggest_series(series_configs)
+
+            # Validate overall tournament feasibility
+            self._validate_tournament_feasibility(tournament_config, series_configs)
+
+            # Generate all matches, separating pools and eliminations
+            all_pool_matches = []
+            all_elimination_matches = []
+
+            for series in series_configs:
+                pool_matches, elimination_matches = self.match_generator.generate_series_matches(series)
+                all_pool_matches.extend(pool_matches)
+                all_elimination_matches.extend(elimination_matches)
+                logger.info(f"📊 Series {series.name} ({series.get_pool_description()}): {len(pool_matches)} pool + {len(elimination_matches)} elimination = {len(pool_matches) + len(elimination_matches)} total matches")
+
+            logger.info(f"🎯 Tournament Total: {len(all_pool_matches)} pool matches, {len(all_elimination_matches)} elimination matches")
+
+            # Solve scheduling problem with phase separation
+            result = self.solver.solve(tournament_config, all_pool_matches, all_elimination_matches)
+
+            if result.success:
+                logger.info(f"✅ Schedule generated successfully in {result.generation_time:.2f} seconds")
+                logger.info(f"📊 Pool phase ends at: {self._minutes_to_time(result.pool_completion_time, tournament_config.start_time)}")
+                logger.info(f"📊 Max wait time: {result.max_wait_time} minutes")
+                logger.info(f"📊 Tournament ends at: {self._minutes_to_time(result.tournament_end_time, tournament_config.start_time)}")
+                logger.info(f"📊 Court utilization: {result.court_utilization:.1%}")
+            else:
+                logger.error(f"❌ Failed to generate schedule: {result.error_message}")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"💥 Error during scheduling: {str(e)}")
+            return ScheduleResult(
+                success=False,
+                matches=[],
+                max_wait_time=0,
+                tournament_end_time=0,
+                court_utilization=0.0,
+                generation_time=0.0,
+                pool_completion_time=0,
+                error_message=str(e)
+            )
+
+    def _validate_and_suggest_series(self, series_list: List[SeriesConfig]):
+        """Validate each series and provide helpful suggestions"""
+        for series in series_list:
+            valid, warnings, suggestions = PoolStructureHelper.validate_and_suggest(series)
+
+            if not valid:
+                logger.warning(f"⚠️  Series {series.name} configuration issue:")
+                for warning in warnings:
+                    logger.warning(f"   • {warning}")
+
+                if suggestions:
+                    logger.info(f"💡 Suggested alternatives for {series.total_players} players:")
+                    for i, suggestion in enumerate(suggestions[:3]):  # Show top 3 suggestions
+                        logger.info(f"   {i+1}. {suggestion['description']} → {suggestion['total_matches']} total matches")
+
+                raise ValueError(f"Invalid pool configuration for series {series.name}")
+            else:
+                logger.info(f"✅ Series {series.name}: {series.get_pool_description()}")
+
+    def _validate_tournament_feasibility(self, tournament: TournamentConfig, series_list: List[SeriesConfig]):
+        """Validate that tournament is theoretically feasible"""
+        total_matches = 0
+
+        for series in series_list:
+            pool_sizes = series.get_pool_distribution()
+
+            # Pool matches
+            pool_matches = sum(self.calculator.calculate_pool_matches(size) for size in pool_sizes)
+
+            # Elimination matches
+            elimination_matches = 0
+            if not series.single_pool:
+                total_qualifiers = len(pool_sizes) * series.qualifiers_per_pool
+                elimination_matches = self.calculator.calculate_elimination_matches(total_qualifiers)
+
+            series_total = pool_matches + elimination_matches
+            total_matches += series_total
+
+        # Check time feasibility
+        start_time = self._time_to_minutes(tournament.start_time)
+        end_time = self._time_to_minutes(tournament.end_time)
+        available_minutes = end_time - start_time
+
+        # Rough estimate: assume perfect court utilization
+        required_minutes = total_matches * tournament.match_duration / tournament.num_courts
+
+        if required_minutes > available_minutes:
+            raise ValueError(
+                f"🚫 Tournament not feasible: {total_matches} matches require ~{required_minutes:.0f} minutes "
+                f"but only {available_minutes} minutes available"
+            )
+
+        logger.info(f"✅ Feasibility check passed: {total_matches} matches, ~{required_minutes:.0f}/{available_minutes} minutes needed")
+
+    def _time_to_minutes(self, time_str: str) -> int:
+        """Convert HH:MM to minutes from midnight"""
+        hours, minutes = map(int, time_str.split(':'))
+        return hours * 60 + minutes
+
+    def _minutes_to_time(self, minutes: int, start_time: str) -> str:
+        """Convert minutes from tournament start to HH:MM"""
+        start_minutes = self._time_to_minutes(start_time)
+        total_minutes = start_minutes + minutes
+        hours = total_minutes // 60
+        mins = total_minutes % 60
+        return f"{hours:02d}:{mins:02d}"
+
+    def print_schedule_summary(self, result: ScheduleResult, tournament_config: TournamentConfig):
+        """Print a formatted summary with phase separation"""
+        if not result.success:
+            print(f"❌ Schedule generation failed: {result.error_message}")
+            return
+
+        print(f"\n🏸 Tournament Schedule: {tournament_config.name}")
+        print("=" * 80)
+        print(f"📊 Summary:")
+        print(f"   • Total matches: {len(result.matches)}")
+        print(f"   • Pool phase ends: {self._minutes_to_time(result.pool_completion_time, tournament_config.start_time)}")
+        print(f"   • Max wait time: {result.max_wait_time} minutes")
+        print(f"   • Tournament ends: {self._minutes_to_time(result.tournament_end_time, tournament_config.start_time)}")
+        print(f"   • Court utilization: {result.court_utilization:.1%}")
+        print(f"   • Generation time: {result.generation_time:.2f} seconds")
+
+        if result.warnings:
+            print(f"\n⚠️  Warnings:")
+            for warning in result.warnings:
+                print(f"   • {warning}")
+
+        # Group matches by phase and time
+        pool_matches = [m for m in result.matches if m.phase == "pool"]
+        elimination_matches = [m for m in result.matches if m.phase == "elimination"]
+
+        print(f"\n📅 POOL PHASE ({len(pool_matches)} matches):")
+        print("-" * 60)
+        self._print_phase_matches(pool_matches, tournament_config, max_show=10)
+
+        if elimination_matches:
+            print(f"\n🏆 ELIMINATION PHASE ({len(elimination_matches)} matches):")
+            print("-" * 60)
+            self._print_phase_matches(elimination_matches, tournament_config, max_show=20)
+
+    def _print_phase_matches(self, matches: List[Match], tournament_config: TournamentConfig, max_show: int = 10):
+        """Print matches for a specific phase"""
+        time_slots = defaultdict(list)
+        for match in matches:
+            if match.start_time is not None:
+                time_str = self._minutes_to_time(match.start_time, tournament_config.start_time)
+                time_slots[time_str].append(match)
+
+        for i, (time, matches_at_time) in enumerate(sorted(time_slots.items())):
+            if i >= max_show:
+                print(f"   ... ({len(time_slots) - max_show} more time slots)")
+                break
+
+            print(f"{time}:")
+            for match in sorted(matches_at_time, key=lambda m: m.court or 0):
+                court_str = f"Court {match.court}" if match.court else "TBD"
+                print(f"   {court_str:8} | {match.series_name:4} | {match.pool_name:15} | {match.player1} vs {match.player2}")
+
+def create_improved_example_tournament() -> Tuple[TournamentConfig, List[SeriesConfig]]:
+    """Create tournament configuration with improved pool structure"""
+    tournament = TournamentConfig(
+        name="Improved Badminton Tournament",
+        start_time="08:00",
+        end_time="22:00",
+        match_duration=33,
+        rest_duration=20,
+        num_courts=6
+    )
+
+    # MUCH clearer series configuration
+    series = [
+        SeriesConfig(
+            name="SH1",
+            series_type="SH",
+            total_players=9,
+            players_per_pool=3,  # Creates 3 pools of 3 players each
+            qualifiers_per_pool=2
+        ),
+        SeriesConfig(
+            name="SH2",
+            series_type="SH",
+            total_players=8,
+            number_of_pools=2,  # Creates 2 pools of 4 players each
+            qualifiers_per_pool=2
+        ),
+        SeriesConfig(
+            name="SD1",
+            series_type="SD",
+            total_players=4,
+            single_pool=True  # Everyone plays everyone
+        ),
+        SeriesConfig(
+            name="MX1",
+            series_type="MX",
+            total_players=12,
+            players_per_pool=4,  # Creates 3 pools of 4 players each
+            qualifiers_per_pool=2
+        )
+    ]
+
+    return tournament, series
 
 def show_pool_suggestions(total_players: int):
     """Show pool structure suggestions for a given number of players"""
@@ -1410,13 +1546,9 @@ def show_pool_suggestions(total_players: int):
         print(f"   • Configuration: {suggestion['config']}")
         print()
 
-# =============================================
-# IMPROVED COMMAND LINE INTERFACE
-# =============================================
-
 def main():
     """Main command line interface with pool structure helpers"""
-    parser = argparse.ArgumentParser(description='Badminton Tournament Scheduler (FIXED CONSTRAINTS)')
+    parser = argparse.ArgumentParser(description='Badminton Tournament Scheduler (FIXED ELIMINATION DEPENDENCIES)')
     parser.add_argument('--test', action='store_true', help='Run unit tests')
     parser.add_argument('--run-example', action='store_true', help='Run improved example tournament')
     parser.add_argument('--config', type=str, help='JSON configuration file')
@@ -1483,7 +1615,7 @@ def main():
     if result.success and (args.validate_only or True):  # Always validate
         print(f"\n🔍 Validating tournament constraints...")
 
-        # Validate all constraints
+        # Validate all constraints INCLUDING elimination dependencies
         rest_valid, rest_violations = ConstraintValidator.validate_rest_constraints(
             result.matches, tournament.rest_duration
         )
@@ -1491,6 +1623,8 @@ def main():
         court_valid, court_violations = ConstraintValidator.validate_court_conflicts(result.matches)
 
         phase_valid, phase_violations = ConstraintValidator.validate_phase_ordering(result.matches)
+
+        dependency_valid, dependency_violations = ConstraintValidator.validate_elimination_dependencies(result.matches)
 
         structure_valid, structure_violations = ConstraintValidator.validate_tournament_structure(
             result, series
@@ -1512,12 +1646,17 @@ def main():
             for violation in phase_violations[:3]:
                 print(f"   ❌ {violation}")
 
+        print(f"✅ Elimination dependencies: {'PASSED' if dependency_valid else 'FAILED'}")
+        if not dependency_valid:
+            for violation in dependency_violations[:3]:
+                print(f"   ❌ {violation}")
+
         print(f"✅ Tournament structure: {'PASSED' if structure_valid else 'FAILED'}")
         if not structure_valid:
             for violation in structure_violations[:3]:
                 print(f"   ❌ {violation}")
 
-        all_valid = rest_valid and court_valid and phase_valid and structure_valid
+        all_valid = rest_valid and court_valid and phase_valid and dependency_valid and structure_valid
         print(f"\n🎯 Overall validation: {'✅ ALL CONSTRAINTS SATISFIED' if all_valid else '❌ CONSTRAINT VIOLATIONS FOUND'}")
 
     # Export if requested
