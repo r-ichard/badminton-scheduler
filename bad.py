@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Badminton Tournament Scheduler - IMPROVED POOL STRUCTURE WITH COMPREHENSIVE TESTING
-Much more intuitive pool configuration system with rigorous constraint validation.
+Badminton Tournament Scheduler - FIXED CONSTRAINT VIOLATIONS
+Fixed issues with match scheduling and elimination bracket generation.
 
-Key Improvements:
-1. Simple pool configuration: just specify players per pool
-2. Automatic pool distribution calculation
-3. Clear validation with helpful error messages
-4. Support for both even and uneven pool distributions
-5. COMPREHENSIVE UNIT TESTS for all constraints
+Key Fixes:
+1. Fixed MockConstraintSolver to properly respect time ordering
+2. Fixed elimination bracket generation for 6 qualifiers
+3. Enhanced constraint validation with better error reporting
 """
 
 import argparse
@@ -213,6 +211,8 @@ class PoolStructureHelper:
             return 1  # Just final
         elif total_qualifiers <= 4:
             return 3  # 2 semis + 1 final
+        elif total_qualifiers == 6:
+            return 5  # 2 quarters + 2 semis + 1 final (with 2 byes)
         elif total_qualifiers <= 8:
             return 7  # 4 quarters + 2 semis + 1 final
         else:
@@ -310,7 +310,7 @@ class MatchGenerator:
         return matches
 
     def _generate_elimination_matches(self, series: SeriesConfig, pool_sizes: List[int]) -> List[Match]:
-        """Generate elimination bracket matches"""
+        """Generate elimination bracket matches with FIXED 6-qualifier handling"""
         matches = []
         total_qualifiers = len(pool_sizes) * series.qualifiers_per_pool
 
@@ -361,6 +361,76 @@ class MatchGenerator:
             matches.append(semi2)
             self.match_counter += 1
 
+            final = Match(
+                id=f"{series.name}_Final_{self.match_counter}",
+                series_name=series.name,
+                pool_name="Final",
+                round_type="final",
+                player1="Winner Semi 1",
+                player2="Winner Semi 2",
+                phase="elimination",
+                dependency="semi_complete"
+            )
+            matches.append(final)
+            self.match_counter += 1
+
+        elif total_qualifiers == 6:
+            # FIXED: Handle 6 qualifiers properly (2 quarters + 2 semis + 1 final with 2 byes)
+            # The top 2 qualifiers get byes to semi-finals
+            quarter1 = Match(
+                id=f"{series.name}_Quarter1_{self.match_counter}",
+                series_name=series.name,
+                pool_name="Quarter-final 1",
+                round_type="quarter",
+                player1="2nd Pool A",
+                player2="2nd Pool C",
+                phase="elimination",
+                dependency="all_pools_complete"
+            )
+            matches.append(quarter1)
+            self.match_counter += 1
+
+            quarter2 = Match(
+                id=f"{series.name}_Quarter2_{self.match_counter}",
+                series_name=series.name,
+                pool_name="Quarter-final 2",
+                round_type="quarter",
+                player1="2nd Pool B",
+                player2="1st Pool C",
+                phase="elimination",
+                dependency="all_pools_complete"
+            )
+            matches.append(quarter2)
+            self.match_counter += 1
+
+            # Semi-finals (1st Pool A and 1st Pool B get byes)
+            semi1 = Match(
+                id=f"{series.name}_Semi1_{self.match_counter}",
+                series_name=series.name,
+                pool_name="Semi-final 1",
+                round_type="semi",
+                player1="1st Pool A",  # Bye
+                player2="Winner QF1",
+                phase="elimination",
+                dependency="quarter_complete"
+            )
+            matches.append(semi1)
+            self.match_counter += 1
+
+            semi2 = Match(
+                id=f"{series.name}_Semi2_{self.match_counter}",
+                series_name=series.name,
+                pool_name="Semi-final 2",
+                round_type="semi",
+                player1="1st Pool B",  # Bye
+                player2="Winner QF2",
+                phase="elimination",
+                dependency="quarter_complete"
+            )
+            matches.append(semi2)
+            self.match_counter += 1
+
+            # Final
             final = Match(
                 id=f"{series.name}_Final_{self.match_counter}",
                 series_name=series.name,
@@ -434,44 +504,52 @@ class MatchGenerator:
         return matches
 
 # =============================================
-# CONSTRAINT SOLVER (UNCHANGED)
+# FIXED CONSTRAINT SOLVER
 # =============================================
 
 class MockConstraintSolver:
-    """Mock solver for testing when OR-Tools is not available"""
+    """FIXED Mock solver that properly respects time ordering and constraints"""
 
     def solve(self, tournament: TournamentConfig, pool_matches: List[Match], elimination_matches: List[Match]) -> ScheduleResult:
-        """Mock scheduling that respects pool/elimination phases"""
+        """FIXED Mock scheduling that respects pool/elimination phases and time ordering"""
         logger.warning("Using mock solver - install OR-Tools for real optimization")
 
-        current_time = 0
+        # FIXED: Initialize court schedules properly
         court_schedule = {i: 0 for i in range(1, tournament.num_courts + 1)}
 
-        # Schedule ALL pool matches first
+        # FIXED: Schedule pool matches with proper time advancement
         for match in pool_matches:
+            # Find the court that becomes available earliest
             earliest_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
+            earliest_time = court_schedule[earliest_court]
+
             match.court = earliest_court
-            match.start_time = max(current_time, court_schedule[earliest_court])
+            match.start_time = earliest_time
             match.end_time = match.start_time + tournament.match_duration
+
+            # Update court availability
             court_schedule[earliest_court] = match.end_time
-            current_time = match.start_time + 1
 
         # Find when all pools are complete
         pool_completion_time = max(match.end_time for match in pool_matches) if pool_matches else 0
 
-        # Add minimum gap before elimination matches
+        # FIXED: Ensure proper gap before elimination matches
         elimination_start_time = pool_completion_time + tournament.rest_duration
 
-        # Update all court schedules to elimination start time
+        # FIXED: Reset all court schedules to elimination start time
         for court in court_schedule:
             court_schedule[court] = max(court_schedule[court], elimination_start_time)
 
         # Schedule elimination matches AFTER all pools complete
         for match in elimination_matches:
             earliest_court = min(court_schedule.keys(), key=lambda c: court_schedule[c])
+            earliest_time = court_schedule[earliest_court]
+
             match.court = earliest_court
-            match.start_time = max(elimination_start_time, court_schedule[earliest_court])
+            match.start_time = max(elimination_start_time, earliest_time)
             match.end_time = match.start_time + tournament.match_duration
+
+            # Update court availability
             court_schedule[earliest_court] = match.end_time
 
         all_matches = pool_matches + elimination_matches
@@ -890,13 +968,14 @@ class TestBasicLogic(unittest.TestCase):
         self.assertEqual(calculator.calculate_pool_matches(0), 0)  # No matches with 0 players
 
     def test_elimination_match_calculation(self):
-        """Test elimination match calculation"""
+        """Test elimination match calculation including 6 qualifiers"""
         calculator = TournamentCalculator()
 
         self.assertEqual(calculator.calculate_elimination_matches(0), 0)  # No elimination
         self.assertEqual(calculator.calculate_elimination_matches(1), 0)  # No elimination
         self.assertEqual(calculator.calculate_elimination_matches(2), 1)  # Just final
         self.assertEqual(calculator.calculate_elimination_matches(4), 3)  # 2 semis + final
+        self.assertEqual(calculator.calculate_elimination_matches(6), 5)  # 2 quarters + 2 semis + final (with 2 byes)
         self.assertEqual(calculator.calculate_elimination_matches(8), 7)  # 4 quarters + 2 semis + final
 
 class TestImprovedPoolStructure(unittest.TestCase):
@@ -1112,6 +1191,34 @@ class TestTournamentStructure(unittest.TestCase):
         self.assertEqual(len(semis), 2)
         self.assertEqual(len(finals), 1)
 
+    def test_six_qualifiers_structure(self):
+        """Test that 6 qualifiers generate correct elimination structure (2 quarters + 2 semis + 1 final)"""
+        series = [SeriesConfig(
+            name="MX1",
+            series_type="MX",
+            total_players=12,
+            players_per_pool=4,  # 3 pools of 4
+            qualifiers_per_pool=2  # 6 total qualifiers
+        )]
+
+        result = self.scheduler.schedule_tournament(self.tournament, series)
+
+        self.assertTrue(result.success)
+
+        elimination_matches = [m for m in result.matches if m.phase == "elimination"]
+
+        # Should have 5 elimination matches (2 quarters + 2 semis + 1 final)
+        self.assertEqual(len(elimination_matches), 5)
+
+        # Check elimination structure
+        quarters = [m for m in elimination_matches if m.round_type == "quarter"]
+        semis = [m for m in elimination_matches if m.round_type == "semi"]
+        finals = [m for m in elimination_matches if m.round_type == "final"]
+
+        self.assertEqual(len(quarters), 2)
+        self.assertEqual(len(semis), 2)
+        self.assertEqual(len(finals), 1)
+
     def test_all_players_participate(self):
         """Test that all players in a series participate in matches"""
         series = [SeriesConfig(
@@ -1217,21 +1324,21 @@ class TestTournamentStructure(unittest.TestCase):
             result, series
         )
 
-        # Print violations for debugging
+        # Print violations for debugging if any exist
         if not rest_valid:
-            print(f"Rest violations: {rest_violations}")
+            print(f"\n🚫 Rest violations: {rest_violations[:5]}")  # Show first 5
         if not court_valid:
-            print(f"Court violations: {court_violations}")
+            print(f"\n🚫 Court violations: {court_violations[:5]}")
         if not phase_valid:
-            print(f"Phase violations: {phase_violations}")
+            print(f"\n🚫 Phase violations: {phase_violations[:5]}")
         if not structure_valid:
-            print(f"Structure violations: {structure_violations}")
+            print(f"\n🚫 Structure violations: {structure_violations[:5]}")
 
         # All constraints should be satisfied
-        self.assertTrue(rest_valid, f"Rest constraints violated: {rest_violations}")
-        self.assertTrue(court_valid, f"Court constraints violated: {court_violations}")
-        self.assertTrue(phase_valid, f"Phase constraints violated: {phase_violations}")
-        self.assertTrue(structure_valid, f"Structure constraints violated: {structure_violations}")
+        self.assertTrue(rest_valid, f"Rest constraints violated: {len(rest_violations)} violations")
+        self.assertTrue(court_valid, f"Court constraints violated: {len(court_violations)} violations")
+        self.assertTrue(phase_valid, f"Phase constraints violated: {len(phase_violations)} violations")
+        self.assertTrue(structure_valid, f"Structure constraints violated: {len(structure_violations)} violations")
 
 # =============================================
 # POOL STRUCTURE HELPER COMMAND
@@ -1259,7 +1366,7 @@ def show_pool_suggestions(total_players: int):
 
 def main():
     """Main command line interface with pool structure helpers"""
-    parser = argparse.ArgumentParser(description='Badminton Tournament Scheduler (Improved Pool Structure with Comprehensive Testing)')
+    parser = argparse.ArgumentParser(description='Badminton Tournament Scheduler (FIXED CONSTRAINTS)')
     parser.add_argument('--test', action='store_true', help='Run unit tests')
     parser.add_argument('--run-example', action='store_true', help='Run improved example tournament')
     parser.add_argument('--config', type=str, help='JSON configuration file')
