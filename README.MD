@@ -26,8 +26,8 @@ A sophisticated tournament scheduling system for badminton competitions using **
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/badminton-tournament-scheduler.git
-cd badminton-tournament-scheduler
+https://github.com/r-ichard/badminton-scheduler
+cd badminton-scheduler
 
 # Install dependencies
 pip install -r requirements.txt
