@@ -3,7 +3,7 @@
 import unittest
 from collections import defaultdict
 
-from models import (
+from src.models import (
     TournamentConfig,
     SeriesConfig,
     Match,
@@ -13,8 +13,8 @@ from models import (
     NumPoolsConfig,
     create_series_config,
 )
-from scheduling import TournamentCalculator, BadmintonTournamentScheduler
-from validation import ConstraintValidator
+from src.scheduling import TournamentCalculator, BadmintonTournamentScheduler
+from src.validation import ConstraintValidator
 
 
 class TestBasicLogic(unittest.TestCase):

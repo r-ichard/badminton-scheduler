@@ -18,6 +18,6 @@ except ImportError:
     exit(1)
 
 if __name__ == "__main__":
-    from cli import main
+    from src.cli import main
 
     main()

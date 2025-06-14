@@ -13,7 +13,7 @@ try:
 except ImportError:
     HAS_ORTOOLS = False
 
-from models import TournamentConfig, SeriesConfig, Match, ScheduleResult
+from src.models import TournamentConfig, SeriesConfig, Match, ScheduleResult
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,7 @@ class MatchGenerator:
     def _generate_pool_matches(
         self, series: SeriesConfig, pool_sizes: List[int]
     ) -> List[Match]:
-        """Generate matches within pools"""
+        """Generate matches within pools with unique player identifiers"""
         matches = []
 
         for pool_idx, pool_size in enumerate(pool_sizes):
@@ -167,8 +167,10 @@ class MatchGenerator:
             else:
                 pool_name = f"Pool {chr(65 + pool_idx)}"  # Pool A, Pool B, Pool C, etc.
 
-            # Generate player names for this pool
-            players = [f"{chr(65 + pool_idx)}{i+1}" for i in range(pool_size)]
+            # Generate player names for this pool with series prefix for uniqueness
+            players = [
+                f"{series.name}_{chr(65 + pool_idx)}{i+1}" for i in range(pool_size)
+            ]
 
             # Generate round-robin matches within this pool
             for i in range(len(players)):
@@ -438,11 +440,16 @@ class ORToolsConstraintSolver:
                 court_var = model.NewIntVar(1, tournament.num_courts, f"court_{idx}")
                 match_vars.append((time_var, court_var))
 
-            # Map players to their matches
+            # Map players to their matches with series-specific player IDs
+            # This prevents conflicts between different series with same player names
             player_to_matches = defaultdict(list)
             for idx, match in enumerate(all_matches):
-                player_to_matches[match.player1].append(idx)
-                player_to_matches[match.player2].append(idx)
+                # Create unique player identifiers that include series name
+                player1_id = f"{match.series_name}_{match.player1}"
+                player2_id = f"{match.series_name}_{match.player2}"
+
+                player_to_matches[player1_id].append(idx)
+                player_to_matches[player2_id].append(idx)
 
             # Constraint 1: Rest time between matches for same player
             for player, match_indices in player_to_matches.items():
@@ -476,7 +483,7 @@ class ORToolsConstraintSolver:
                     model.Add(court_i != court_j).OnlyEnforceIf(same_court.Not())
                     model.Add(time_i != time_j).OnlyEnforceIf(same_court)
 
-            # Constraint 3: Phase ordering - all pools before elimination
+            # Constraint 3: Phase ordering - pools before elimination within same series
             pool_indices = [
                 i for i, match in enumerate(all_matches) if match.phase == "pool"
             ]
@@ -485,39 +492,54 @@ class ORToolsConstraintSolver:
             ]
 
             if pool_indices and elimination_indices:
-                # All pool matches must finish before any elimination match starts
+                # Group pools and eliminations by series for parallel execution
+                series_pool_groups = defaultdict(list)
+                series_elim_groups = defaultdict(list)
+
                 for pool_idx in pool_indices:
-                    for elim_idx in elimination_indices:
-                        time_pool, _ = match_vars[pool_idx]
-                        time_elim, _ = match_vars[elim_idx]
-                        model.Add(
-                            time_pool
-                            + tournament.match_duration
-                            + tournament.rest_duration
-                            <= time_elim
-                        )
+                    series_name = all_matches[pool_idx].series_name
+                    series_pool_groups[series_name].append(pool_idx)
 
-            # Constraint 4: Elimination dependency ordering
-            elimination_by_level = defaultdict(list)
+                for elim_idx in elimination_indices:
+                    series_name = all_matches[elim_idx].series_name
+                    series_elim_groups[series_name].append(elim_idx)
+
+                # Only constrain pools and elimination within the same series
+                for series_name in series_elim_groups.keys():
+                    series_pools = series_pool_groups.get(series_name, [])
+                    series_elims = series_elim_groups[series_name]
+
+                    for pool_idx in series_pools:
+                        for elim_idx in series_elims:
+                            time_pool, _ = match_vars[pool_idx]
+                            time_elim, _ = match_vars[elim_idx]
+                            model.Add(
+                                time_pool + tournament.match_duration <= time_elim
+                            )
+
+            # Constraint 4: Elimination dependency ordering (per-series)
+            series_elimination_groups = defaultdict(lambda: defaultdict(list))
             for idx in elimination_indices:
+                series_name = all_matches[idx].series_name
                 level = all_matches[idx].dependency_level
-                elimination_by_level[level].append(idx)
+                series_elimination_groups[series_name][level].append(idx)
 
-            # Each level must complete before next level starts
-            for level in sorted(elimination_by_level.keys())[:-1]:
-                current_level_indices = elimination_by_level[level]
-                next_level_indices = elimination_by_level.get(level + 1, [])
+            # Each level must complete before next level starts (within same series)
+            for series_name, elimination_by_level in series_elimination_groups.items():
+                for level in sorted(elimination_by_level.keys())[:-1]:
+                    current_level_indices = elimination_by_level[level]
+                    next_level_indices = elimination_by_level.get(level + 1, [])
 
-                for curr_idx in current_level_indices:
-                    for next_idx in next_level_indices:
-                        time_curr, _ = match_vars[curr_idx]
-                        time_next, _ = match_vars[next_idx]
-                        model.Add(
-                            time_curr
-                            + tournament.match_duration
-                            + tournament.rest_duration
-                            <= time_next
-                        )
+                    for curr_idx in current_level_indices:
+                        for next_idx in next_level_indices:
+                            time_curr, _ = match_vars[curr_idx]
+                            time_next, _ = match_vars[next_idx]
+                            model.Add(
+                                time_curr
+                                + tournament.match_duration
+                                + tournament.rest_duration
+                                <= time_next
+                            )
 
             # Objective: Minimize tournament end time and wait times
             # Calculate tournament end time
@@ -745,9 +767,11 @@ class BadmintonTournamentScheduler:
     def _validate_tournament_feasibility(
         self, tournament: TournamentConfig, series_list: List[SeriesConfig]
     ):
-        """Validate that tournament is theoretically feasible"""
+        """Validate that tournament is theoretically feasible with parallel pools"""
         total_matches = 0
+        max_concurrent_pools = 0
 
+        # Calculate total matches and maximum concurrent pool matches
         for series in series_list:
             pool_sizes = series.get_pool_distribution()
 
@@ -755,6 +779,10 @@ class BadmintonTournamentScheduler:
             pool_matches = sum(
                 self.calculator.calculate_pool_matches(size) for size in pool_sizes
             )
+            total_matches += pool_matches
+
+            # Track maximum pool matches in any single series (for concurrency estimation)
+            max_concurrent_pools = max(max_concurrent_pools, pool_matches)
 
             # Elimination matches
             elimination_matches = 0
@@ -764,28 +792,33 @@ class BadmintonTournamentScheduler:
                     total_qualifiers
                 )
 
-            series_total = pool_matches + elimination_matches
-            total_matches += series_total
+            total_matches += elimination_matches
 
-        # Check time feasibility with more realistic estimates
+        # Check time feasibility with parallel pool execution
         start_time = self._time_to_minutes(tournament.start_time)
         end_time = self._time_to_minutes(tournament.end_time)
         available_minutes = end_time - start_time
 
-        # More realistic estimate: account for scheduling inefficiencies
-        # Assume 70% efficiency due to rest periods and dependencies
+        # Optimistic calculation assuming pools can run in parallel
+        # Assume 85% efficiency (higher than before due to parallelization)
         required_minutes = (
             total_matches * tournament.match_duration / tournament.num_courts
-        ) / 0.7
+        ) / 0.85
 
         if required_minutes > available_minutes:
+            # Try even more optimistic calculation
+            optimistic_required = (
+                total_matches * tournament.match_duration / tournament.num_courts
+            ) / 0.95
+
             raise ValueError(
                 f"🚫 Tournament not feasible: {total_matches} matches require ~{required_minutes:.0f} minutes "
-                f"but only {available_minutes} minutes available"
+                f"(optimistic: {optimistic_required:.0f}) but only {available_minutes} minutes available. "
+                f"With parallel pool execution, try increasing courts to {(total_matches * tournament.match_duration / available_minutes):.0f}"
             )
 
         logger.info(
-            f"✅ Feasibility check passed: {total_matches} matches, ~{required_minutes:.0f}/{available_minutes} minutes needed"
+            f"✅ Feasibility check passed with parallel pools: {total_matches} matches, ~{required_minutes:.0f}/{available_minutes} minutes needed"
         )
 
     def _time_to_minutes(self, time_str: str) -> int:

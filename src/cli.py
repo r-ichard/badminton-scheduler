@@ -6,7 +6,7 @@ import logging
 from dataclasses import asdict
 from typing import Tuple, List, cast, Dict, Any
 
-from models import (
+from src.models import (
     TournamentConfig,
     SeriesConfig,
     SinglePoolConfig,
@@ -15,9 +15,42 @@ from models import (
     BaseSeriesConfig,
     create_series_config,
 )
-from scheduling import BadmintonTournamentScheduler, PoolStructureHelper
-from validation import ConstraintValidator
-from tests import run_all_tests
+from src.scheduling import BadmintonTournamentScheduler, PoolStructureHelper
+from src.validation import ConstraintValidator
+def run_all_tests():
+    """Run all unit tests with proper import handling"""
+    import sys
+    import os
+    import unittest
+    
+    # Add project root to path
+    project_root = os.path.dirname(os.path.dirname(__file__))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    # Import and run tests
+    try:
+        from tests.test_tournament import (
+            TestBasicLogic, TestImprovedPoolStructure, TestConstraintValidation,
+            TestTournamentStructure, TestEliminationDependencies, TestORToolsScheduling
+        )
+        
+        # Create test suite
+        loader = unittest.TestLoader()
+        suite = unittest.TestSuite()
+        
+        # Add all test classes
+        for test_class in [TestBasicLogic, TestImprovedPoolStructure, TestConstraintValidation,
+                          TestTournamentStructure, TestEliminationDependencies, TestORToolsScheduling]:
+            suite.addTests(loader.loadTestsFromTestCase(test_class))
+        
+        # Run tests
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        return result.wasSuccessful()
+    except ImportError as e:
+        print(f"❌ Error importing tests: {e}")
+        return False
 
 # Configure logging
 logging.basicConfig(

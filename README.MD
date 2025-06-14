@@ -1,45 +1,215 @@
-# Bad planning calculator
-The goal of this script is to calculate in which order, where and when players in a Badminton tournament will compeet agains each other.
-The computing is made in a way that the players spend at least 20 minutes of rest between each match but don't wait too much it's optimized to improve planning and time distribution.
+# 🏸 Badminton Tournament Scheduler
 
-It takes as input :
-The tournament information :
-- Name
-- Number of court where people will play
-- Start time
-- End time
-- The number of players in total
-In addition to those inside a tournament there can be one or more series.
-It also takes as input :
-- The name of the series
-- The mean duration time for a match in this series
-- The number of people in a series
-In additon to those inside each series we can have one or more pool.
-If there is a single pool it means that each player will play agains each other.
-If there are multiple pools it means those describe how people will compeet against each other.
-A pool is composed of a number of contestant that wil compeet agains each other (player A , player B, player C) and a number of people winners.
+A sophisticated tournament scheduling system for badminton competitions using **Google OR-Tools** constraint programming. This system efficiently schedules complex tournament structures with multiple series, pool play, and elimination rounds while satisfying all tournament constraints.
 
-### How it works
-First we need to make some basic verification :
-1. Is total number of players logic based on series and pool
-2. Based on mean time in each series is it possible to play every match the same day with this number of court and configuration.
-3. Are number of people in series logical based on pool number.
+## ✨ Features
 
-Then computation takes place:
-First we schedule in the time we have when each match of pools should take place.
-All players in a pool should compeet agains each other (e.g. a pool of 3 people - player A vs player B, player A vs player C, player B vs player C )
-if the number of winner is configured to be  higher then 1 then we count points and the players with the most points go to eliminations.
-We devide series and pools to court based on the following constraints :
-- Mean duration of match should be taken into account
-- Each player must have at least 20 minutes of rest between matches.
+- **🔄 Multiple Tournament Formats**: Support for single pools, multiple pools with elimination brackets
+- **⚡ Advanced Constraint Satisfaction**: Uses Google OR-Tools CP-SAT solver for optimal scheduling
+- **🎯 Multiple Series Support**: Handle different categories (Singles, Doubles, Mixed) simultaneously
+- **🏊 Flexible Pool Structures**: Configure pools by players per pool or number of pools
+- **✅ Comprehensive Validation**: Ensures all tournament rules and constraints are satisfied
+- **⏰ Time Window Management**: Respects tournament start/end times and minimum rest periods
+- **🏟️ Court Optimization**: Maximizes court utilization while avoiding conflicts
 
-### Eliminations
-The winners of each pools compeet agains each other in pairs in rounds until there is only 1 winners.
+## 🚀 Quick Start
 
-### Edge case
-It's possible that some configuration will not allow each player in each pools compeeting against  each other in eliminations because it will create redundant matches
-in this case the player(s) with the best score are considered "winners" of a first match and will directly fight the next round of eliminations.
+### Prerequisites
 
-## Output
-This script outputs a clear agenda with times for each pool first and then the eliminations rounds.
-It also cleary outputs warning based on the provided configuration.
+- Python 3.8+
+- OR-Tools library
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/badminton-tournament-scheduler.git
+cd badminton-tournament-scheduler
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run tests to verify installation
+python main.py --test
+
+# Generate and run an example tournament
+python main.py --run-example
+```
+
+## 📋 Usage
+
+### Command Line Interface
+
+```bash
+# Run unit tests
+python main.py --test
+
+# Run example tournament
+python main.py --run-example
+
+# Use custom configuration file
+python main.py --config tournament.json
+
+# Save example configuration
+python main.py --save-example example.json
+
+# Get pool structure suggestions
+python main.py --suggest-pools 12
+
+# Export schedule to CSV
+python main.py --export-csv schedule.csv
+```
+
+### Configuration Format
+
+Tournaments are defined using JSON configuration files. See [`docs/JSON_FORMAT_SPECIFICATION.md`](docs/JSON_FORMAT_SPECIFICATION.md) for complete documentation.
+
+#### Basic Example
+
+```json
+{
+  "tournament": {
+    "name": "Club Championship 2024",
+    "start_time": "08:00",
+    "end_time": "18:00",
+    "match_duration": 30,
+    "rest_duration": 20,
+    "num_courts": 4
+  },
+  "series": [
+    {
+      "name": "SH1",
+      "series_type": "SH",
+      "total_players": 8,
+      "number_of_pools": 2,
+      "qualifiers_per_pool": 2
+    }
+  ]
+}
+```
+
+## 🏗️ Tournament Structure
+
+### Series Types
+- **SH**: Men's Singles
+- **SD**: Women's Singles  
+- **DH**: Men's Doubles
+- **DD**: Women's Doubles
+- **MX**: Mixed Doubles
+
+### Pool Configuration Methods
+
+1. **Single Pool**: All players in one round-robin pool
+2. **Players Per Pool**: Specify number of players in each pool
+3. **Number of Pools**: Specify total number of pools
+
+### Elimination Brackets
+
+The system automatically generates appropriate elimination structures:
+- **2 qualifiers**: Final only
+- **4 qualifiers**: Semi-finals + Final
+- **6 qualifiers**: Quarter-finals + Semi-finals + Final (with 2 byes)
+- **8 qualifiers**: Quarter-finals + Semi-finals + Final
+
+## ⚙️ Technical Details
+
+### Constraint Satisfaction
+
+The scheduler uses Google OR-Tools CP-SAT solver to satisfy multiple constraints:
+
+1. **Rest Time Constraints**: Players must have minimum rest between matches
+2. **Court Conflict Prevention**: No two matches on same court simultaneously  
+3. **Phase Ordering**: Pool play completes before elimination rounds
+4. **Elimination Dependencies**: Tournament rounds proceed sequentially
+5. **Time Window Enforcement**: All matches within tournament hours
+
+### Architecture
+
+```
+src/
+├── models.py          # Data models and tournament configuration
+├── scheduling.py      # Core scheduling logic and OR-Tools solver
+├── validation.py      # Constraint validation and verification
+├── cli.py            # Command-line interface and example configurations
+└── main.py           # Entry point
+
+tests/
+└── test_tournament.py # Comprehensive unit test suite
+
+examples/
+├── tournament_example.json
+└── bacothon16.json
+
+docs/
+├── JSON_FORMAT_SPECIFICATION.md
+└── DEVELOPMENT.md
+```
+
+## 🧪 Testing
+
+Run the complete test suite:
+
+```bash
+python main.py --test
+```
+
+Tests cover:
+- Pool structure calculations
+- Constraint validation
+- Tournament generation
+- OR-Tools solver integration
+- Elimination bracket logic
+
+## 📈 Performance
+
+The OR-Tools implementation provides:
+- **⚡ Optimal Solutions**: Mathematically proven optimal schedules when possible
+- **🚀 Fast Solving**: Typically solves tournaments in seconds
+- **📊 Scalability**: Handles tournaments with 100+ matches
+- **🔧 Flexibility**: Adapts to various tournament formats and constraints
+
+## 🤝 Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Setup
+
+```bash
+# Install development dependencies
+pip install -r requirements.txt
+
+# Format code
+black src/ tests/
+
+# Run tests
+python main.py --test
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Google OR-Tools**: Constraint programming framework
+- **Badminton Community**: Tournament format specifications and requirements
+
+## 📚 Documentation
+
+- [`docs/JSON_FORMAT_SPECIFICATION.md`](docs/JSON_FORMAT_SPECIFICATION.md): Complete configuration format documentation
+- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): Development guidelines and code style
+
+## 🐛 Issues and Support
+
+- Report bugs on [GitHub Issues](https://github.com/yourusername/badminton-tournament-scheduler/issues)
+- For questions, please use [GitHub Discussions](https://github.com/yourusername/badminton-tournament-scheduler/discussions)
+
+---
+
+**Made with ❤️ for the badminton community**

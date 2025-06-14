@@ -3,8 +3,15 @@
 from typing import List, Tuple
 from collections import defaultdict
 
-from models import Match, ScheduleResult, SeriesConfig, SinglePoolConfig, PlayerPerPoolConfig, NumPoolsConfig
-from scheduling import PoolStructureHelper
+from src.models import (
+    Match,
+    ScheduleResult,
+    SeriesConfig,
+    SinglePoolConfig,
+    PlayerPerPoolConfig,
+    NumPoolsConfig,
+)
+from src.scheduling import PoolStructureHelper
 
 
 class ConstraintValidator:
@@ -73,25 +80,34 @@ class ConstraintValidator:
 
     @staticmethod
     def validate_phase_ordering(matches: List[Match]) -> Tuple[bool, List[str]]:
-        """Validate that all pool matches complete before elimination matches start"""
+        """Validate that pool matches complete before elimination matches start within each series"""
         violations = []
 
-        pool_matches = [
-            m for m in matches if m.phase == "pool" and m.end_time is not None
-        ]
-        elimination_matches = [
-            m for m in matches if m.phase == "elimination" and m.start_time is not None
-        ]
+        # Group matches by series for series-specific validation
+        series_matches = defaultdict(lambda: {"pool": [], "elimination": []})
 
-        if pool_matches and elimination_matches:
-            latest_pool_end = max(match.end_time for match in pool_matches)
-            earliest_elim_start = min(match.start_time for match in elimination_matches)
+        for match in matches:
+            if match.phase == "pool" and match.end_time is not None:
+                series_matches[match.series_name]["pool"].append(match)
+            elif match.phase == "elimination" and match.start_time is not None:
+                series_matches[match.series_name]["elimination"].append(match)
 
-            if latest_pool_end > earliest_elim_start:
-                violations.append(
-                    f"Phase ordering violation: pool phase ends at {latest_pool_end} "
-                    f"but elimination phase starts at {earliest_elim_start}"
+        # Check phase ordering within each series
+        for series_name, matches_by_phase in series_matches.items():
+            pool_matches = matches_by_phase["pool"]
+            elimination_matches = matches_by_phase["elimination"]
+
+            if pool_matches and elimination_matches:
+                latest_pool_end = max(match.end_time for match in pool_matches)
+                earliest_elim_start = min(
+                    match.start_time for match in elimination_matches
                 )
+
+                if latest_pool_end > earliest_elim_start:
+                    violations.append(
+                        f"Phase ordering violation in {series_name}: pool phase ends at {latest_pool_end} "
+                        f"but elimination phase starts at {earliest_elim_start}"
+                    )
 
         return len(violations) == 0, violations
 
