@@ -1,5 +1,8 @@
 # 🏸 Badminton Tournament Scheduler
 
+NB : This is a work in progress, some logic and scheduling can be improved. 
+
+
 A sophisticated tournament scheduling system for badminton competitions using **Google OR-Tools** constraint programming. This system efficiently schedules complex tournament structures with multiple series, pool play, and elimination rounds while satisfying all tournament constraints.
 
 ## ✨ Features
@@ -205,10 +208,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [`docs/JSON_FORMAT_SPECIFICATION.md`](docs/JSON_FORMAT_SPECIFICATION.md): Complete configuration format documentation
 - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md): Development guidelines and code style
 
-## 🐛 Issues and Support
 
-- Report bugs on [GitHub Issues](https://github.com/yourusername/badminton-tournament-scheduler/issues)
-- For questions, please use [GitHub Discussions](https://github.com/yourusername/badminton-tournament-scheduler/discussions)
 
 ---
 
